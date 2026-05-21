@@ -24,9 +24,15 @@ settings = get_settings()
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 
-# Model constants
-PRIMARY_MODEL = "gemini-2.5-flash-lite"
-FALLBACK_MODEL = "gemini-2.5-flash"
+# Model constants - Ordered by quota availability based on user plan
+MODELS = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-1.5-flash"
+]
 
 
 async def _retry_with_backoff(func, max_retries=3, base_delay=2.0, fallback_func=None):
@@ -64,8 +70,35 @@ class GeminiService:
     """AI service using Google Gemini for quotation analysis."""
 
     def __init__(self):
-        self.model = genai.GenerativeModel(PRIMARY_MODEL)
-        self.fallback_model = genai.GenerativeModel(FALLBACK_MODEL)
+        self.models = [genai.GenerativeModel(m) for m in MODELS]
+
+    async def _generate_content(self, contents, request_options=None):
+        """Helper to generate content with robust fallback across multiple models."""
+        for i, model in enumerate(self.models):
+            for attempt in range(3):
+                try:
+                    loop = asyncio.get_event_loop()
+                    import functools
+                    func = functools.partial(model.generate_content, contents, request_options=request_options)
+                    return await loop.run_in_executor(None, func)
+                except Exception as e:
+                    error_str = str(e).lower()
+                    is_quota = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str
+                    is_retryable = is_quota or "timed out" in error_str or "timeout" in error_str
+                    
+                    if is_quota:
+                        if i < len(self.models) - 1:
+                            logger.warning(f"Quota/Error hit on {model.model_name}, switching to next fallback: {str(e)[:100]}")
+                            break # Move to next model
+                        
+                    if is_retryable and attempt < 2:
+                        delay = 2.0 * (2 ** attempt)
+                        await asyncio.sleep(delay)
+                        continue
+                    
+                    if i == len(self.models) - 1:
+                        logger.error(f"All models exhausted. Last error: {str(e)[:120]}")
+                        raise
 
     def _clean_json_response(self, text: str) -> str:
         """Clean markdown code blocks from Gemini response."""
@@ -137,13 +170,8 @@ Return ONLY the JSON object, no markdown formatting or additional text."""
         try:
             logger.info("Gemini API call: extract_quotation_data starting, text length=%s", len(text))
 
-            async def call_gemini():
-                return self.model.generate_content(prompt, request_options={"timeout": 600})
-
-            async def call_gemini_fallback():
-                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
-
-            response = await _retry_with_backoff(call_gemini, fallback_func=call_gemini_fallback)
+            response = await self._generate_content(prompt, request_options={"timeout": 600})
+            
             logger.info("Gemini API call: extract_quotation_data returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
             data = json.loads(cleaned)
@@ -152,8 +180,8 @@ Return ONLY the JSON object, no markdown formatting or additional text."""
             return extracted
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Gemini response as JSON: {e}")
-            logger.error(f"Raw response: {response.text[:500] if response else 'No response'}")
-            if response:
+            logger.error(f"Raw response: {response.text[:500] if 'response' in locals() and response else 'No response'}")
+            if 'response' in locals() and response:
                 json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
                 if json_match:
                     data = json.loads(json_match.group())
@@ -233,15 +261,9 @@ Uploaded file: quotation.pdf
 
 Return ONLY the JSON object, no markdown formatting or additional text."""
 
-            async def call_gemini_pdf():
-                logger.info("Inside call_gemini_pdf...")
-                return self.model.generate_content([prompt, uploaded_file], request_options={"timeout": 600.0})
-
-            async def call_gemini_pdf_fallback():
-                logger.info("Inside call_gemini_pdf_fallback...")
-                return self.fallback_model.generate_content([prompt, uploaded_file], request_options={"timeout": 600.0})
-
-            response = await _retry_with_backoff(call_gemini_pdf, fallback_func=call_gemini_pdf_fallback)
+            logger.info("Starting generate_content with PDF...")
+            response = await self._generate_content([prompt, uploaded_file], request_options={"timeout": 600.0})
+            
             logger.info("Gemini PDF fallback returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
             data = json.loads(cleaned)
@@ -250,11 +272,12 @@ Return ONLY the JSON object, no markdown formatting or additional text."""
             return extracted
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Gemini PDF response as JSON: {e}")
-            logger.error(f"Raw PDF response: {response.text[:500]}")
-            json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-                return ExtractedQuotationData(**data)
+            if 'response' in locals() and response:
+                logger.error(f"Raw PDF response: {response.text[:500]}")
+                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                if json_match:
+                    data = json.loads(json_match.group())
+                    return ExtractedQuotationData(**data)
             raise ValueError("Failed to extract structured data from PDF via Gemini")
         except Exception as e:
             raise
@@ -276,13 +299,7 @@ Example: {{"MS Square Pipe": "Mild Steel Square Pipe", "Mild Steel Square Pipe 4
 Do not include any markdown, just the JSON dictionary.
 """
         try:
-            async def call_gemini_norm():
-                return self.model.generate_content(prompt, request_options={"timeout": 60.0})
-
-            async def call_gemini_norm_fallback():
-                return self.fallback_model.generate_content(prompt, request_options={"timeout": 60.0})
-
-            response = await _retry_with_backoff(call_gemini_norm, fallback_func=call_gemini_norm_fallback)
+            response = await self._generate_content(prompt, request_options={"timeout": 60.0})
             cleaned = self._clean_json_response(response.text)
             return json.loads(cleaned)
         except Exception as e:
@@ -355,13 +372,8 @@ Return ONLY the JSON object."""
         try:
             logger.info("Gemini API call: generate_procurement_summary starting, vendors=%s, items=%s", len(comparison_data.get("vendors", [])), len(comparison_data.get("items", [])))
 
-            async def call_gemini_summary():
-                return self.model.generate_content(prompt, request_options={"timeout": 600})
-
-            async def call_gemini_summary_fallback():
-                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
-
-            response = await _retry_with_backoff(call_gemini_summary, fallback_func=call_gemini_summary_fallback)
+            response = await self._generate_content(prompt, request_options={"timeout": 600})
+            
             logger.info("Gemini API call: generate_procurement_summary returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
             summary = json.loads(cleaned)
@@ -413,10 +425,8 @@ Return ONLY the JSON object."""
         try:
             logger.info("Gemini API call: generate_negotiation_email starting, vendor_id=%s, email_type=%s", vendor_data.get("id"), email_type)
 
-            async def call_gemini_email():
-                return self.model.generate_content(prompt)
-
-            response = await _retry_with_backoff(call_gemini_email)
+            response = await self._generate_content(prompt)
+            
             logger.info("Gemini API call: generate_negotiation_email returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
             email_result = json.loads(cleaned)
@@ -455,13 +465,7 @@ Return a JSON array of anomalies:
 Return ONLY the JSON array. If no anomalies found, return an empty array []."""
 
         try:
-            async def call_gemini_anomalies():
-                return self.model.generate_content(prompt, request_options={"timeout": 600})
-
-            async def call_gemini_anomalies_fallback():
-                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
-
-            response = await _retry_with_backoff(call_gemini_anomalies, fallback_func=call_gemini_anomalies_fallback)
+            response = await self._generate_content(prompt, request_options={"timeout": 600})
             cleaned = self._clean_json_response(response.text)
             return json.loads(cleaned)
         except Exception as e:
@@ -493,13 +497,8 @@ Return ONLY the JSON object. Do not include markdown formatting or extra text.""
         try:
             logger.info("Gemini API call: generate_vendor_intelligence starting for vendor=%s", vendor_name)
 
-            async def call_gemini_intelligence():
-                return self.model.generate_content(prompt, request_options={"timeout": 600})
-
-            async def call_gemini_intelligence_fallback():
-                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
-
-            response = await _retry_with_backoff(call_gemini_intelligence, fallback_func=call_gemini_intelligence_fallback)
+            response = await self._generate_content(prompt, request_options={"timeout": 600})
+            
             cleaned = self._clean_json_response(response.text)
             return json.loads(cleaned)
         except Exception as e:
