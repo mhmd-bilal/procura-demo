@@ -5,7 +5,6 @@ import time
 from typing import Optional
 from app.core.supabase import get_supabase
 from app.services.gemini_service import GeminiService
-from rapidfuzz import process, fuzz
 
 logger = logging.getLogger(__name__)
 
