@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Sparkle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 
@@ -51,7 +51,7 @@ export default function SignupPage() {
       <div className="w-full max-w-sm animate-slide-up">
         <div className="flex items-center gap-2 mb-8">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-primary-foreground" />
+            <Sparkle className="w-4 h-4 text-primary-foreground" />
           </div>
           <span className="text-lg font-semibold">Procura</span>
         </div>

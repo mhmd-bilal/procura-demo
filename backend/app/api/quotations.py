@@ -110,8 +110,11 @@ async def process_quotation(quotation_id: str):
 
     # Update status to processing
     supabase.table("quotations").update(
-        {"status": "processing"}
+        {"status": "processing", "error_message": None}
     ).eq("id", quotation_id).execute()
+
+    # If this is a re-process, delete any existing extracted items for this quotation
+    supabase.table("extracted_items").delete().eq("quotation_id", quotation_id).execute()
 
     try:
         # Download file from storage
@@ -212,11 +215,17 @@ async def process_quotation(quotation_id: str):
 async def background_process_all(project_id: str, quotations_data: list):
     supabase = get_supabase()
     
-    for q in quotations_data:
+    import asyncio
+
+    async def _safe_process(quotation_id):
         try:
-            await process_quotation(q["id"])
+            await process_quotation(quotation_id)
         except Exception as e:
-            logger.error(f"Background processing failed for quotation {q['id']}: {e}")
+            logger.error(f"Background processing failed for quotation {quotation_id}: {e}")
+
+    # Process all quotations in parallel
+    tasks = [_safe_process(q["id"]) for q in quotations_data]
+    await asyncio.gather(*tasks)
 
     try:
         logger.info("Background project processing started for project_id=%s, quotations=%s", project_id, len(quotations_data))

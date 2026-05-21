@@ -6,11 +6,16 @@ import logging
 import re
 import io
 import asyncio
+import httpx
 from typing import Optional
 from app.core.config import get_settings
 from app.models.schemas import ExtractedQuotationData
-from google.api_core import gapic_v1
-from google.rpc import error_details_pb2
+
+# Force httpx default timeout to 10 minutes to prevent ANY google-generativeai read timeouts
+try:
+    httpx._config.DEFAULT_TIMEOUT_CONFIG = httpx.Timeout(600.0)
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -19,26 +24,38 @@ settings = get_settings()
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 
-async def _retry_with_backoff(func, max_retries=3, base_delay=2.0):
-    """Retry a function with exponential backoff, handling 429 errors gracefully."""
+# Model constants
+PRIMARY_MODEL = "gemini-2.5-flash-lite"
+FALLBACK_MODEL = "gemini-2.5-flash"
+
+
+async def _retry_with_backoff(func, max_retries=3, base_delay=2.0, fallback_func=None):
+    """Retry with exponential backoff. On quota errors, try fallback_func if provided."""
     for attempt in range(max_retries):
         try:
             return await func() if asyncio.iscoroutinefunction(func) else func()
         except Exception as e:
-            error_str = str(e)
-            # Check if it's a quota error (429)
-            if "429" in error_str or "quota" in error_str.lower():
-                if attempt < max_retries - 1:
-                    # Extract retry delay from error if available
-                    delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
-                    logger.warning(f"Rate limited (429). Retrying in {delay}s... (Attempt {attempt + 1}/{max_retries})")
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    logger.error(f"Rate limit exceeded after {max_retries} retries. Giving up.")
+            error_str = str(e).lower()
+            is_quota = "429" in error_str or "quota" in error_str or "resource exhausted" in error_str
+            is_retryable = is_quota or "timed out" in error_str or "timeout" in error_str
+
+            # On quota error with a fallback available, switch immediately
+            if is_quota and fallback_func is not None:
+                logger.warning(f"Quota hit on primary model, switching to fallback: {str(e)[:100]}")
+                try:
+                    return await fallback_func() if asyncio.iscoroutinefunction(fallback_func) else fallback_func()
+                except Exception as e2:
+                    logger.error(f"Fallback also failed: {str(e2)[:100]}")
                     raise
+
+            if is_retryable and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(f"Retryable error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {str(e)[:120]}")
+                await asyncio.sleep(delay)
+                continue
             else:
-                # Not a rate limit error, raise immediately
+                if is_retryable:
+                    logger.error(f"Failed after {max_retries} retries: {str(e)[:120]}")
                 raise
     return None
 
@@ -47,7 +64,8 @@ class GeminiService:
     """AI service using Google Gemini for quotation analysis."""
 
     def __init__(self):
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        self.model = genai.GenerativeModel(PRIMARY_MODEL)
+        self.fallback_model = genai.GenerativeModel(FALLBACK_MODEL)
 
     def _clean_json_response(self, text: str) -> str:
         """Clean markdown code blocks from Gemini response."""
@@ -118,11 +136,14 @@ Return ONLY the JSON object, no markdown formatting or additional text."""
 
         try:
             logger.info("Gemini API call: extract_quotation_data starting, text length=%s", len(text))
-            
+
             async def call_gemini():
-                return self.model.generate_content(prompt, request_options={"timeout": 300})
-            
-            response = await _retry_with_backoff(call_gemini)
+                return self.model.generate_content(prompt, request_options={"timeout": 600})
+
+            async def call_gemini_fallback():
+                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
+
+            response = await _retry_with_backoff(call_gemini, fallback_func=call_gemini_fallback)
             logger.info("Gemini API call: extract_quotation_data returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
             data = json.loads(cleaned)
@@ -132,7 +153,6 @@ Return ONLY the JSON object, no markdown formatting or additional text."""
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Gemini response as JSON: {e}")
             logger.error(f"Raw response: {response.text[:500] if response else 'No response'}")
-            # Try to extract JSON from response
             if response:
                 json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
                 if json_match:
@@ -148,15 +168,19 @@ Return ONLY the JSON object, no markdown formatting or additional text."""
         try:
             logger.info("Gemini PDF fallback starting for quotation_id=%s", quotation_id)
             file_obj = io.BytesIO(file_bytes)
-            
+
             async def upload_file_with_retry():
+                # Re-seek the file object before each upload attempt
+                file_obj.seek(0)
                 return genai.upload_file(
                     file_obj,
                     mime_type="application/pdf",
                     display_name="quotation.pdf"
                 )
-            
+
+            logger.info("Starting genai.upload_file...")
             uploaded_file = await _retry_with_backoff(upload_file_with_retry)
+            logger.info(f"File uploaded successfully: {uploaded_file.uri if uploaded_file else 'None'}. Now starting generate_content...")
 
             prompt = f"""You are a procurement data extraction specialist. Extract structured quotation data from the uploaded PDF document.
 
@@ -210,9 +234,14 @@ Uploaded file: quotation.pdf
 Return ONLY the JSON object, no markdown formatting or additional text."""
 
             async def call_gemini_pdf():
-                return self.model.generate_content([prompt, uploaded_file], request_options={"timeout": 300})
-            
-            response = await _retry_with_backoff(call_gemini_pdf)
+                logger.info("Inside call_gemini_pdf...")
+                return self.model.generate_content([prompt, uploaded_file], request_options={"timeout": 600.0})
+
+            async def call_gemini_pdf_fallback():
+                logger.info("Inside call_gemini_pdf_fallback...")
+                return self.fallback_model.generate_content([prompt, uploaded_file], request_options={"timeout": 600.0})
+
+            response = await _retry_with_backoff(call_gemini_pdf, fallback_func=call_gemini_pdf_fallback)
             logger.info("Gemini PDF fallback returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
             data = json.loads(cleaned)
@@ -228,45 +257,38 @@ Return ONLY the JSON object, no markdown formatting or additional text."""
                 return ExtractedQuotationData(**data)
             raise ValueError("Failed to extract structured data from PDF via Gemini")
         except Exception as e:
-            logger.error(f"Gemini PDF extraction failed: {str(e)}")
             raise
 
-    async def normalize_item_names(self, items: list[dict]) -> list[dict]:
-        """Normalize inconsistent item names across multiple vendors."""
-        prompt = f"""You are a procurement data normalization specialist.
+    async def normalize_item_names(self, items: list[str]) -> dict[str, str]:
+        """Normalize item names using Gemini to handle abbreviations like MS vs Mild Steel."""
+        if not items:
+            return {}
 
-Given these items from different vendor quotations, normalize the item names so that equivalent items share the exact same normalized name.
+        prompt = f"""You are a procurement catalog expert. Group the following raw item names into standardized canonical names.
+Expand abbreviations (e.g., 'MS' -> 'Mild Steel', 'GI' -> 'Galvanized Iron').
+Ignore minor dimensional variations if they refer to the same base item type, but DO keep distinct items separate.
 
-Rules:
-1. Items that refer to the same product should get the same normalized_name.
-2. Use the item's 'description', 'item_name', and 'quantity' to accurately determine if they are the same product. Even if the 'item_name' is missing details (e.g. "Steel Square Pipe"), the 'description' often contains the specifications (e.g. "40x40x2mm").
-3. Use standard industry terminology.
-4. Include key specifications (dimensions, grade, etc.) in the normalized name.
-5. Return the same list with an added "normalized_name" field.
-
-Items:
+RAW NAMES:
 {json.dumps(items, indent=2)}
 
-Return ONLY a JSON array with each item having the original fields plus "normalized_name"."""
-
+Return ONLY a flat JSON dictionary mapping EXACT raw names to a standardized name.
+Example: {{"MS Square Pipe": "Mild Steel Square Pipe", "Mild Steel Square Pipe 40x40x2mm": "Mild Steel Square Pipe"}}
+Do not include any markdown, just the JSON dictionary.
+"""
         try:
-            logger.info("Gemini API call: normalize_item_names starting for %s items", len(items))
-            
-            async def call_gemini_normalize():
-                return self.model.generate_content(prompt, request_options={"timeout": 300})
-            
-            response = await _retry_with_backoff(call_gemini_normalize)
-            logger.info("Gemini API call: normalize_item_names returned response length=%s", len(response.text or ""))
+            async def call_gemini_norm():
+                return self.model.generate_content(prompt, request_options={"timeout": 60.0})
+
+            async def call_gemini_norm_fallback():
+                return self.fallback_model.generate_content(prompt, request_options={"timeout": 60.0})
+
+            response = await _retry_with_backoff(call_gemini_norm, fallback_func=call_gemini_norm_fallback)
             cleaned = self._clean_json_response(response.text)
-            normalized = json.loads(cleaned)
-            logger.info("Gemini API call: normalize_item_names completed")
-            return normalized
+            return json.loads(cleaned)
         except Exception as e:
             logger.error(f"Item normalization failed: {str(e)}")
-            # Fallback: use original names
-            for item in items:
-                item["normalized_name"] = item.get("item_name", "Unknown")
-            return items
+            # Fallback: return identity map
+            return {item: item for item in items}
 
     async def generate_procurement_summary(self, comparison_data: dict) -> dict:
         """Generate AI procurement insights from comparison data."""
@@ -332,14 +354,14 @@ Return ONLY the JSON object."""
 
         try:
             logger.info("Gemini API call: generate_procurement_summary starting, vendors=%s, items=%s", len(comparison_data.get("vendors", [])), len(comparison_data.get("items", [])))
-            
-            # Use a different model specifically for summaries to spread the quota load
-            summary_model = genai.GenerativeModel("gemini-3.1-flash-lite")
-            
+
             async def call_gemini_summary():
-                return summary_model.generate_content(prompt, request_options={"timeout": 300})
-            
-            response = await _retry_with_backoff(call_gemini_summary)
+                return self.model.generate_content(prompt, request_options={"timeout": 600})
+
+            async def call_gemini_summary_fallback():
+                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
+
+            response = await _retry_with_backoff(call_gemini_summary, fallback_func=call_gemini_summary_fallback)
             logger.info("Gemini API call: generate_procurement_summary returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
             summary = json.loads(cleaned)
@@ -390,10 +412,10 @@ Return ONLY the JSON object."""
 
         try:
             logger.info("Gemini API call: generate_negotiation_email starting, vendor_id=%s, email_type=%s", vendor_data.get("id"), email_type)
-            
+
             async def call_gemini_email():
-                return self.model.generate_content(prompt, request_options={"timeout": 300})
-            
+                return self.model.generate_content(prompt)
+
             response = await _retry_with_backoff(call_gemini_email)
             logger.info("Gemini API call: generate_negotiation_email returned response length=%s", len(response.text or ""))
             cleaned = self._clean_json_response(response.text)
@@ -434,9 +456,12 @@ Return ONLY the JSON array. If no anomalies found, return an empty array []."""
 
         try:
             async def call_gemini_anomalies():
-                return self.model.generate_content(prompt, request_options={"timeout": 300})
-            
-            response = await _retry_with_backoff(call_gemini_anomalies)
+                return self.model.generate_content(prompt, request_options={"timeout": 600})
+
+            async def call_gemini_anomalies_fallback():
+                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
+
+            response = await _retry_with_backoff(call_gemini_anomalies, fallback_func=call_gemini_anomalies_fallback)
             cleaned = self._clean_json_response(response.text)
             return json.loads(cleaned)
         except Exception as e:
@@ -444,7 +469,7 @@ Return ONLY the JSON array. If no anomalies found, return an empty array []."""
             return []
 
     async def generate_vendor_intelligence(self, vendor_name: str) -> dict:
-        """Use Gemini (with Search Grounding) to research a vendor online and return an intelligence profile."""
+        """Use Gemini to research a vendor online and return an intelligence profile."""
         prompt = f"""You are a corporate researcher. Search the internet and use your knowledge to provide a comprehensive vendor intelligence profile for: '{vendor_name}'.
 Look for their reputation, customer reviews, market presence, and any red flags.
 
@@ -467,21 +492,18 @@ Return ONLY the JSON object. Do not include markdown formatting or extra text.""
 
         try:
             logger.info("Gemini API call: generate_vendor_intelligence starting for vendor=%s", vendor_name)
-            
-            # Using gemini-3.1-flash-lite which has higher quota
-            search_model = genai.GenerativeModel(
-                model_name="gemini-3.1-flash-lite"
-            )
-            
+
             async def call_gemini_intelligence():
-                return search_model.generate_content(prompt, request_options={"timeout": 300})
-            
-            response = await _retry_with_backoff(call_gemini_intelligence)
+                return self.model.generate_content(prompt, request_options={"timeout": 600})
+
+            async def call_gemini_intelligence_fallback():
+                return self.fallback_model.generate_content(prompt, request_options={"timeout": 600})
+
+            response = await _retry_with_backoff(call_gemini_intelligence, fallback_func=call_gemini_intelligence_fallback)
             cleaned = self._clean_json_response(response.text)
             return json.loads(cleaned)
         except Exception as e:
             logger.error(f"Vendor intelligence generation failed for {vendor_name}: {str(e)}")
-            # Fallback response if search fails
             return {
                 "vendor_name": vendor_name,
                 "online_rating": None,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, BarChart3, Download, FileText, Loader2, Mail,
-  Sparkles, AlertTriangle, CheckCircle2, TrendingDown,
+  Sparkle, AlertTriangle, CheckCircle2, TrendingDown,
   Users, Copy, Shield, Clock, Trash2, Globe, Search,
   ExternalLink, ThumbsUp, Flag, ChevronRight, Package,
   TrendingUp, Zap, ChevronDown, X
@@ -60,7 +60,7 @@ function CustomSelect({
       <button
         type="button"
         onClick={() => setOpen(p => !p)}
-        className={`flex h-10 w-full items-center justify-between rounded-xl border px-3.5 text-sm transition-all duration-200 ${open
+        className={`flex h-10 w-full items-center justify-between rounded-xl border px-3 px-1 text-sm transition-all duration-200 ${open
           ? "border-primary/50 ring-2 ring-primary/15 bg-background"
           : "border-border/60 bg-background hover:border-border"
           }`}
@@ -87,7 +87,7 @@ function CustomSelect({
                 key={opt.value}
                 type="button"
                 onClick={() => { onChange(opt.value); setOpen(false); }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 text-sm text-left transition-colors hover:bg-muted/50 ${value === opt.value ? "bg-primary/8 text-primary font-medium" : "text-foreground"
+                className={`w-full flex items-center justify-between px-3 py-1 text-sm text-left transition-colors hover:bg-muted/50 ${value === opt.value ? "bg-primary/8 text-primary font-medium" : "text-foreground"
                   }`}
               >
                 {opt.label}
@@ -119,23 +119,23 @@ function StatCard({
           </p>
         </CardHeader>
         <CardContent>
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1 min-w-0">
-            <p className="text-2xl font-bold tracking-tight leading-none mt-2">{value}</p>
-            {trend && (
-              <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-tight truncate" title={trend}>
-                {trend}
-              </p>
-            )}
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1 min-w-0">
+              <p className="text-2xl font-bold tracking-tight leading-none mt-2">{value}</p>
+              {trend && (
+                <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-tight truncate" title={trend}>
+                  {trend}
+                </p>
+              )}
+            </div>
+            <div className={`${bgClass} p-2.5 rounded-xl shrink-0 transition-transform duration-300 group-hover:scale-110`}>
+              <Icon className={`w-4 h-4 ${colorClass}`} />
+            </div>
           </div>
-          <div className={`${bgClass} p-2.5 rounded-xl shrink-0 transition-transform duration-300 group-hover:scale-110`}>
-            <Icon className={`w-4 h-4 ${colorClass}`} />
-          </div>
-        </div>
-        {/* hover accent line */}
-        {/* <div className={`absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-500 ${colorClass.replace("text-", "bg-")}`} /> */}
-      </CardContent>
-    </Card>
+          {/* hover accent line */}
+          {/* <div className={`absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-500 ${colorClass.replace("text-", "bg-")}`} /> */}
+        </CardContent>
+      </Card>
     </motion.div >
   );
 }
@@ -215,6 +215,12 @@ export default function ProjectDetailPage() {
   const [intelligenceLoading, setIntelligenceLoading] = useState(false);
   const [intelligenceData, setIntelligenceData] = useState<any>(null);
   const [dismissedError, setDismissedError] = useState(false);
+
+  // PDF Management State
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [reprocessingPdfId, setReprocessingPdfId] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadProject(); }, [projectId]);
 
@@ -312,6 +318,68 @@ export default function ProjectDetailPage() {
       toast.success("Intelligence retrieved!");
     } catch (e: any) { toast.error(e.message || "Failed"); }
     finally { setIntelligenceLoading(false); }
+  };
+
+  const handleUploadPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+
+    setUploadingPdf(true);
+    try {
+      toast.loading("Uploading and extracting PDF...");
+      // Upload
+      const uploadRes = await quotationsApi.upload(projectId, file);
+      const quotationId = uploadRes.data.quotation.id;
+
+      // Process
+      await quotationsApi.process(quotationId);
+      toast.dismiss();
+      toast.success("PDF extracted! Please click Regenerate Comparison to update the project.");
+
+      // Reload project to show new quotation
+      loadProject();
+    } catch (err: any) {
+      toast.dismiss();
+      toast.error(err.message || "Failed to upload and process PDF");
+    } finally {
+      setUploadingPdf(false);
+      if (e.target) e.target.value = ''; // Reset input
+    }
+  };
+
+  const handleReprocessPdf = async (quotationId: string) => {
+    setReprocessingPdfId(quotationId);
+    try {
+      toast.loading("Reprocessing PDF...");
+      await quotationsApi.process(quotationId);
+      toast.dismiss();
+      toast.success("PDF re-extracted! Please click Regenerate Comparison to update the project.");
+      loadProject();
+    } catch (err: any) {
+      toast.dismiss();
+      toast.error(err.message || "Failed to reprocess PDF");
+    } finally {
+      setReprocessingPdfId(null);
+    }
+  };
+
+  const handleRegenerateProject = async () => {
+    setRegenerating(true);
+    try {
+      toast.loading("Regenerating comparison...");
+      await comparisonApi.generate(projectId);
+      toast.dismiss();
+      toast.loading("Regenerating AI summary...");
+      await comparisonApi.generateSummary(projectId);
+      toast.dismiss();
+      toast.success("Project fully updated!");
+      loadProject();
+    } catch (err: any) {
+      toast.dismiss();
+      toast.error(err.message || "Failed to regenerate project");
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   const allVendorNames = [
@@ -421,8 +489,18 @@ export default function ProjectDetailPage() {
               className="gap-1.5 h-9 text-xs font-semibold">
               {processingProject
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Sparkles className="w-3.5 h-3.5" />}
+                : <Sparkle className="w-3.5 h-3.5" />}
               Process Quotations
+            </Button>
+          )}
+
+          {comparison.length > 0 && (
+            <Button size="sm" variant="outline" onClick={handleRegenerateProject} disabled={regenerating}
+              className="gap-1.5 h-9 text-xs font-semibold border-border/50">
+              {regenerating
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <BarChart3 className="w-3.5 h-3.5" />}
+              Regenerate Comparison
             </Button>
           )}
 
@@ -503,8 +581,9 @@ export default function ProjectDetailPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="h-11 w-full sm:w-auto bg-transparent border-0 border-border/50 rounded-xl p-1 flex overflow-x-auto gap-0.5">
             {[
+              { value: "pdfs", icon: FileText, label: "PDFs" },
               { value: "comparison", icon: BarChart3, label: "Comparison" },
-              { value: "summary", icon: Sparkles, label: "Summary" },
+              { value: "summary", icon: Sparkle, label: "Summary" },
               { value: "negotiate", icon: Mail, label: "Negotiate" },
               { value: "intelligence", icon: Globe, label: "Intelligence" },
             ].map(tab => (
@@ -529,31 +608,7 @@ export default function ProjectDetailPage() {
           ════════════════════════════════════════════════════════════ */}
           <TabsContent value="comparison" className="mt-4 space-y-4 outline-none">
 
-            {/* AI Banner */}
-            <AnimatePresence>
-              {summary && project?.status === "completed" && (
-                <motion.div
-                  key="ai-banner"
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="flex flex-col sm:flex-row gap-3 items-start sm:items-center px-4 py-3.5 rounded-xl bg-primary/5 border border-primary/15"
-                >
-                  <Zap className="w-4 h-4 text-primary shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-bold text-primary uppercase tracking-widest mb-0.5">More Insight</p>
-                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed max-w-xl">
-                      {summary.overall_assessment}
-                    </p>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab("summary")}
-                    className="shrink-0 gap-1 text-xs font-semibold text-primary hover:bg-primary/10 h-7 px-3 rounded-lg">
-                    View Summary
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </Button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+
 
             {/* Processing */}
             {project?.status === "processing" ? (
@@ -562,7 +617,7 @@ export default function ProjectDetailPage() {
                   <CardContent className="flex flex-col items-center justify-center py-20 gap-5 text-center">
                     <div className="relative w-14 h-14">
                       <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                        <Sparkles className="w-6 h-6 text-primary" />
+                        <Sparkle className="w-6 h-6 text-primary" />
                       </div>
                       <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-background border border-border flex items-center justify-center">
                         <Loader2 className="w-3 h-3 text-primary animate-spin" />
@@ -589,7 +644,7 @@ export default function ProjectDetailPage() {
                 action={
                   project?.quotations?.length > 0 ? (
                     <Button size="sm" onClick={handleStartProcessing} disabled={processingProject} className="gap-2 ">
-                      {processingProject ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      {processingProject ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkle className="w-3.5 h-3.5" />}
                       Process Now
                     </Button>
                   ) : null
@@ -727,6 +782,32 @@ export default function ProjectDetailPage() {
                 </Card>
               </motion.div>
             )}
+
+            {/* AI Banner */}
+            <AnimatePresence>
+              {summary && project?.status === "completed" && (
+                <motion.div
+                  key="ai-banner"
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="flex flex-col sm:flex-row gap-3 items-start sm:items-center px-4 py-3.5 rounded-xl bg-primary/5 border border-primary/15"
+                >
+                  <Zap className="w-4 h-4 text-primary shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-bold text-primary uppercase tracking-widest mb-0.5">More Insight</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed max-w-xl">
+                      {summary.overall_assessment}
+                    </p>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab("summary")}
+                    className="shrink-0 gap-1 text-xs font-semibold text-primary hover:bg-primary/10 h-7 px-3 rounded-lg">
+                    View Summary
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </TabsContent>
 
           {/* ════════════════════════════════════════════════════════════
@@ -746,7 +827,7 @@ export default function ProjectDetailPage() {
                   <Card className="border-dashed border-2 border-primary/20">
                     <CardContent className="flex flex-col items-center py-14 gap-4 text-center">
                       <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-primary" />
+                        <Sparkle className="w-5 h-5 text-primary" />
                       </div>
                       <div className="space-y-1 max-w-xs">
                         <p className="font-semibold text-sm">Ready to generate</p>
@@ -757,7 +838,7 @@ export default function ProjectDetailPage() {
                       <Button onClick={handleGenerateSummary} disabled={summaryGenerating} className="gap-2 mt-1">
                         {summaryGenerating
                           ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating…</>
-                          : <><Sparkles className="w-3.5 h-3.5" />Generate Summary</>
+                          : <><Sparkle className="w-3.5 h-3.5" />Generate Summary</>
                         }
                       </Button>
                     </CardContent>
@@ -789,7 +870,8 @@ export default function ProjectDetailPage() {
                         <div className="p-2 rounded-lg bg-emerald/10">
                           <TrendingDown className="w-3.5 h-3.5 text-emerald" />
                         </div>
-                        <SectionLabel label="Cheapest Vendor" />
+                        <p className="text-[11px] font-semibold text-muted-foreground tracking-widest uppercase">Cheapest Vendor
+                        </p>
                       </div>
                       <p className="text-xl font-bold">{summary?.cheapest_vendor?.vendor_name || "—"}</p>
                       {summary?.cheapest_vendor?.savings_pct && (
@@ -806,7 +888,8 @@ export default function ProjectDetailPage() {
                         <div className="p-2 rounded-lg bg-cyan/10">
                           <Clock className="w-3.5 h-3.5 text-cyan" />
                         </div>
-                        <SectionLabel label="Best Delivery" />
+                        <p className="text-[11px] font-semibold text-muted-foreground tracking-widest uppercase">Best Delivery
+                        </p>
                       </div>
                       <p className="text-xl font-bold">{summary?.best_delivery_vendor?.vendor_name || "—"}</p>
                       {summary?.best_delivery_vendor?.avg_delivery_days && (
@@ -892,7 +975,10 @@ export default function ProjectDetailPage() {
                               </div>
 
                               {v.score_breakdown?.length > 0 && (
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3.5 pt-3.5 border-t border-border/40">
+                                <div 
+                                  style={{ display: 'grid', gridTemplateColumns: `repeat(${v.score_breakdown.length}, 1fr)` }}
+                                  className="gap-3 mt-3.5 pt-3.5 border-t border-border/40"
+                                >
                                   {v.score_breakdown.map((cat: any, ci: number) => {
                                     const pct = Math.min(100, Math.max(0, (cat.score / cat.max_score) * 100));
                                     return (
@@ -961,7 +1047,7 @@ export default function ProjectDetailPage() {
                     </p>
 
                     <div className="grid sm:grid-cols-2 gap-4 mb-5">
-                      <div className="space-y-1.5">
+                      <div className="flex flex-col gap-2">
                         <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
                           Vendor
                         </label>
@@ -972,7 +1058,7 @@ export default function ProjectDetailPage() {
                           placeholder="Select a vendor…"
                         />
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="flex flex-col gap-2">
                         <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
                           Email Type
                         </label>
@@ -992,7 +1078,7 @@ export default function ProjectDetailPage() {
                     >
                       {generatingEmail
                         ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating…</>
-                        : <><Sparkles className="w-3.5 h-3.5" />Generate Email</>
+                        : <><Sparkle className="w-3.5 h-3.5" />Generate Email</>
                       }
                     </Button>
                   </CardContent>
@@ -1118,64 +1204,90 @@ export default function ProjectDetailPage() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.35 }}
-                    className="grid lg:grid-cols-3 gap-4"
+                    className="space-y-4"
                   >
-                    {/* Profile */}
-                    <Card className="lg:col-span-1 border-border/50 shadow-sm">
-                      <CardContent className="px-5 py-1">
-                        <div className="flex items-start justify-between gap-2 mb-4">
-                          <div>
-                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-0.5">
-                              Vendor Profile
-                            </p>
-                            <p className="font-bold text-base leading-tight">{intelligenceData.vendor_name}</p>
+                    {/* Row 1: Vendor Profile, Market Presence, Public Sentiment */}
+                    <div className="grid lg:grid-cols-3 gap-4">
+                      {/* Vendor Profile */}
+                      <Card className="border-border/50 shadow-sm h-full flex flex-col">
+                        <CardContent className="px-5 py-1 flex flex-col h-full">
+                          <div className="flex items-start justify-between gap-2 mb-4">
+                            <div>
+                              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-0.5">
+                                Vendor Profile
+                              </p>
+                              <p className="font-bold text-base leading-tight">{intelligenceData.vendor_name}</p>
+                            </div>
+                            {intelligenceData.online_rating && (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber/10 text-amber border border-amber/20 text-xs font-bold shrink-0">
+                                ★ {intelligenceData.online_rating}/5
+                              </span>
+                            )}
                           </div>
-                          {intelligenceData.online_rating && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber/10 text-amber border border-amber/20 text-xs font-bold shrink-0">
-                              ★ {intelligenceData.online_rating}/5
-                            </span>
-                          )}
-                        </div>
 
-                        <p className="text-xs text-muted-foreground leading-relaxed p-3 bg-muted/20 rounded-xl border border-border/40 mb-4">
-                          {intelligenceData.research_summary}
-                        </p>
+                          <p className="text-xs text-muted-foreground leading-relaxed p-3 bg-muted/20 rounded-xl border border-border/40 flex-1">
+                            {intelligenceData.research_summary}
+                          </p>
+                        </CardContent>
+                      </Card>
 
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">
-                              Market Presence
-                            </p>
-                            <p className="text-xs leading-relaxed">{intelligenceData.market_presence}</p>
-                          </div>
-                          <div className="w-full h-px bg-border/40" />
-                          <div>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">
-                              Public Sentiment
-                            </p>
-                            <p className="text-xs leading-relaxed">{intelligenceData.public_sentiment}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      {/* Market Presence */}
+                      <Card className="border-border/50 shadow-sm h-full flex flex-col">
+                        <CardContent className="px-5 py-1 flex flex-col h-full">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
+                            Market Presence
+                          </p>
+                          <p className="text-xs leading-relaxed flex-1">{intelligenceData.market_presence}</p>
+                        </CardContent>
+                      </Card>
 
-                    {/* Reviews + Flags */}
-                    <div className="lg:col-span-2 space-y-4">
+                      {/* Public Sentiment */}
+                      <Card className="border-border/50 shadow-sm h-full flex flex-col">
+                        <CardContent className="px-5 py-1 flex flex-col h-full">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
+                            Public Sentiment
+                          </p>
+                          <p className="text-xs leading-relaxed flex-1">{intelligenceData.public_sentiment}</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Row 2: Reviews + Flags */}
+                    <div className="space-y-4">
                       <Card className="border-border/50 shadow-sm">
                         <CardContent className="px-5 py-1">
                           <SectionLabel label="Key Reviews & Findings" />
-                          <ul className="space-y-2">
-                            {intelligenceData.key_reviews?.map((review: string, i: number) => (
-                              <motion.li
-                                key={i}
-                                variants={slideRight}
-                                className="flex gap-2.5 text-xs p-3 rounded-xl border border-border/40 bg-muted/10 hover:bg-muted/20 transition-colors"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                                <span className="leading-relaxed">{review}</span>
-                              </motion.li>
-                            ))}
-                          </ul>
+
+                          {(() => {
+                            const reviews = Array.isArray(intelligenceData.key_reviews)
+                              ? intelligenceData.key_reviews
+                              : typeof intelligenceData.key_reviews === 'string'
+                                ? [intelligenceData.key_reviews]
+                                : [];
+
+                            if (reviews.length === 0) {
+                              return (
+                                <div className="p-4 text-center text-xs text-muted-foreground bg-muted/10 rounded-xl border border-border/40">
+                                  No key reviews or findings available for this vendor.
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <ul className="space-y-2">
+                                {reviews.map((review: string, i: number) => (
+                                  <motion.li
+                                    key={i}
+                                    variants={slideRight}
+                                    className="flex gap-2.5 text-xs p-3 rounded-xl border border-border/40 bg-muted/10 hover:bg-muted/20 transition-colors"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                    <span className="leading-relaxed">{review}</span>
+                                  </motion.li>
+                                ))}
+                              </ul>
+                            );
+                          })()}
                         </CardContent>
                       </Card>
 
@@ -1188,7 +1300,12 @@ export default function ProjectDetailPage() {
                             </p>
                           </div>
                           <CardContent className="p-4 space-y-2">
-                            {intelligenceData.red_flags_found.map((flag: string, i: number) => (
+                            {(Array.isArray(intelligenceData.red_flags_found)
+                              ? intelligenceData.red_flags_found
+                              : typeof intelligenceData.red_flags_found === 'string'
+                                ? [intelligenceData.red_flags_found]
+                                : []
+                            ).map((flag: string, i: number) => (
                               <motion.div
                                 key={i}
                                 variants={slideRight}
@@ -1203,7 +1320,7 @@ export default function ProjectDetailPage() {
                       ) : (
                         <motion.div variants={fadeIn}>
                           <Card className="border-emerald/20 bg-emerald/5 shadow-sm">
-                            <CardContent className="p-4 flex items-center gap-3">
+                            <CardContent className="px-4 py-0 flex items-center gap-3">
                               <div className="p-2 bg-emerald/10 rounded-xl shrink-0">
                                 <CheckCircle2 className="w-4 h-4 text-emerald" />
                               </div>
@@ -1222,6 +1339,105 @@ export default function ProjectDetailPage() {
                 )}
               </AnimatePresence>
             </motion.div>
+          </TabsContent>
+
+          {/* ════════════════════════════════════════════════════════════
+              TAB — PDF MANAGEMENT
+          ════════════════════════════════════════════════════════════ */}
+          <TabsContent value="pdfs" className="mt-4 outline-none">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 pb-4">
+                <div>
+                  <h3 className="font-semibold text-lg">Quotation PDFs</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Manage vendor quotations for this project.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={uploadingPdf}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="gap-2 h-9"
+                  >
+                    {uploadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                    Add New PDF
+                  </Button>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="application/pdf"
+                    onChange={handleUploadPdf}
+                    disabled={uploadingPdf}
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-border/40">
+                  {project?.quotations?.length === 0 && (
+                    <div className="p-8 text-center text-muted-foreground text-sm">
+                      No PDFs uploaded yet.
+                    </div>
+                  )}
+                  {project?.quotations?.map((q: any) => (
+                    <div key={q.id} className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                          <FileText className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">{q.file_name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-muted-foreground">
+                              {(q.file_size / 1024 / 1024).toFixed(2)} MB
+                            </span>
+                            <span className="text-muted-foreground/30">•</span>
+                            {q.status === "processing" ? (
+                              <Badge className="bg-primary/10 text-primary hover:bg-primary/10 border-0 text-[10px] uppercase gap-1 px-1.5 h-4">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Processing
+                              </Badge>
+                            ) : q.status === "extracted" ? (
+                              <Badge className="bg-emerald/10 text-emerald hover:bg-emerald/10 border-0 text-[10px] uppercase px-1.5 h-4">
+                                Extracted
+                              </Badge>
+                            ) : q.status === "failed" ? (
+                              <Badge className="bg-rose/10 text-rose hover:bg-rose/10 border-0 text-[10px] uppercase px-1.5 h-4">
+                                Failed
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-muted text-muted-foreground hover:bg-muted border-0 text-[10px] uppercase px-1.5 h-4">
+                                Uploaded
+                              </Badge>
+                            )}
+                          </div>
+                          {q.status === "failed" && q.error_message && (
+                            <p className="text-xs text-rose mt-1 max-w-md truncate" title={q.error_message}>
+                              {q.error_message}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleReprocessPdf(q.id)}
+                          disabled={reprocessingPdfId === q.id || uploadingPdf}
+                          className="h-8 gap-1.5 text-xs font-medium"
+                        >
+                          {reprocessingPdfId === q.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Sparkle className="w-3.5 h-3.5 text-primary" />
+                          )}
+                          Reprocess
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
         </Tabs>

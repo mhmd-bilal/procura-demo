@@ -20,7 +20,7 @@ import {
   FileText,
   Users,
   IndianRupee,
-  Sparkles,
+  Sparkle,
 } from "lucide-react";
 import { stat } from "fs/promises";
 

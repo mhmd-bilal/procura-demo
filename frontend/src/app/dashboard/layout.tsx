@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
@@ -14,7 +15,6 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Sparkles,
   Menu,
   X,
   Moon,
@@ -76,8 +76,13 @@ export default function DashboardLayout({
         <div className="h-16 px-5 flex items-center justify-between border-b border-sidebar-border">
           <Link href="/dashboard" className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
-              <Sparkles className="w-3.5 h-3.5 text-primary-foreground" />
-            </div>
+              <Image
+                src={mounted && theme === "dark" ? "/dark.png" : "/light.png"}
+                alt="Procura logo"
+                width={20}
+                height={20}
+                className="rounded-sm"
+              />            </div>
             <span className="text-base font-semibold tracking-tight">Procura</span>
           </Link>
           <button
@@ -101,8 +106,8 @@ export default function DashboardLayout({
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                   }`}
               >
                 <item.icon className="w-4 h-4" />
@@ -128,7 +133,7 @@ export default function DashboardLayout({
           </div>
 
           {/* User */}
-          <div 
+          <div
             className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-sidebar-accent/50 cursor-pointer transition-colors"
             onClick={handleLogout}
           >
@@ -157,7 +162,13 @@ export default function DashboardLayout({
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
+            <Image
+              src={mounted && theme === "dark" ? "/logo-dark.png" : "/logo-light.png"}
+              alt="Procura logo"
+              width={20}
+              height={20}
+              className="rounded-sm"
+            />
             <span className="font-semibold text-sm">Procura</span>
           </div>
         </header>

@@ -7,7 +7,7 @@ import {
   BarChart3,
   FileText,
   Shield,
-  Sparkles,
+  Sparkle,
   Upload,
   Zap,
 } from "lucide-react";
@@ -20,7 +20,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-primary-foreground" />
+              <Sparkle className="w-4 h-4 text-primary-foreground" />
             </div>
             <span className="text-lg font-semibold tracking-tight">Procura</span>
           </div>
@@ -41,7 +41,7 @@ export default function LandingPage() {
       <section className="pt-32 pb-20 px-6">
         <div className="max-w-4xl mx-auto text-center animate-slide-up">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-muted/50 text-sm text-muted-foreground mb-6">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <Sparkle className="w-3.5 h-3.5 text-primary" />
             AI-Powered Procurement Intelligence
           </div>
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6">
@@ -136,7 +136,7 @@ export default function LandingPage() {
                 desc: "Drag-and-drop multiple vendor quotation PDFs. Our AI handles scanned docs, inconsistent layouts, and multi-page files.",
               },
               {
-                icon: Sparkles,
+                icon: Sparkle,
                 title: "AI Data Extraction",
                 desc: "Gemini AI extracts item names, pricing, taxes, delivery terms, and warranty details - even from messy PDFs.",
               },
@@ -195,7 +195,7 @@ export default function LandingPage() {
       <footer className="border-t py-8 px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
+            <Sparkle className="w-4 h-4 text-primary" />
             <span>Procura</span>
           </div>
           <p>© 2026 Procura. Built for modern procurement teams.</p>

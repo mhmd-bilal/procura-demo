@@ -1,9 +1,11 @@
 """Comparison Engine - Generates vendor comparison tables and analysis."""
 
 import logging
+import time
 from typing import Optional
 from app.core.supabase import get_supabase
 from app.services.gemini_service import GeminiService
+from rapidfuzz import process, fuzz
 
 logger = logging.getLogger(__name__)
 
@@ -32,49 +34,39 @@ class ComparisonEngine:
         ).execute()
         vendors = {v["id"]: v for v in vendors_result.data}
 
-        # Group items by normalized name
+        # ── AI Normalization ──────────
+        t0 = time.perf_counter()
+        
+        # Get unique raw names
+        raw_names = list(set((item.get("item_name") or "Unknown").strip() for item in items))
+        
+        # Normalize via Gemini
+        normalized_map = await self.ai.normalize_item_names(raw_names)
+        
         item_groups: dict[str, list] = {}
         for item in items:
-            key = (item.get("normalized_name") or item["item_name"]).lower().strip()
+            raw_name = (item.get("item_name") or "Unknown").strip()
+            # Use mapped name or fallback to raw_name
+            norm_name = normalized_map.get(raw_name, raw_name)
+            key = norm_name.lower()
+            
             if key not in item_groups:
                 item_groups[key] = []
-            item_groups[key].append(item)
+            item_groups[key].append({**item, "normalized_name": norm_name})
 
-        # Normalize names using AI if needed
-        all_items_for_normalization = [
-            {
-                "item_name": item["item_name"],
-                "description": item.get("description"),
-                "quantity": item.get("quantity"),
-                "vendor_name": vendors.get(item["vendor_id"], {}).get("name", "Unknown"),
-                "vendor_id": item["vendor_id"]
-            }
-            for item in items
-        ]
+        elapsed = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "AI normalization completed for project_id=%s: %d items -> %d groups in %.1fms",
+            project_id, len(items), len(item_groups), elapsed,
+        )
+        # ─────────────────────────────────────────────────────────────
 
-        try:
-            logger.info("Calling Gemini normalization for project_id=%s with %s items", project_id, len(all_items_for_normalization))
-            normalized = await self.ai.normalize_item_names(all_items_for_normalization)
-            logger.info("Gemini normalization completed for project_id=%s", project_id)
-            # Rebuild groups with normalized names
-            name_map = {}
-            for norm_item in normalized:
-                name_map[
-                    f"{norm_item.get('vendor_id', '')}_{norm_item.get('item_name', '')}"
-                ] = norm_item.get("normalized_name", norm_item.get("item_name"))
-        except Exception:
-            name_map = {}
-
-        # Re-group with normalized names
-        if name_map:
-            item_groups = {}
-            for item in items:
-                key_lookup = f"{item['vendor_id']}_{item['item_name']}"
-                normalized_name = name_map.get(key_lookup, item.get("normalized_name") or item["item_name"])
-                key = normalized_name.lower().strip()
-                if key not in item_groups:
-                    item_groups[key] = []
-                item_groups[key].append({**item, "normalized_name": normalized_name})
+        elapsed = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Fuzzy normalization completed for project_id=%s: %d items -> %d groups in %.1fms",
+            project_id, len(items), len(item_groups), elapsed,
+        )
+        # ─────────────────────────────────────────────────────────────
 
         # Generate comparison results
         comparison_results = []
