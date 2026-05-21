@@ -53,7 +53,7 @@ export default function DashboardLayout({
 
   const handleLogout = async () => {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     router.push("/login");
   };
 
@@ -100,6 +100,20 @@ export default function DashboardLayout({
               item.href === "/dashboard"
                 ? pathname === "/dashboard"
                 : pathname.startsWith(item.href);
+            const isAnalytics = item.href === "/dashboard/analytics";
+
+            if (isAnalytics) {
+              return (
+                <div
+                  key={item.href}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-sidebar-foreground/40 cursor-not-allowed bg-transparent"
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                  <span className="ml-auto text-[10px] uppercase font-bold bg-sidebar-border text-sidebar-foreground/50 px-1.5 py-0.5 rounded">Soon</span>
+                </div>
+              );
+            }
 
             return (
               <Link

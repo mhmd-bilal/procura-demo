@@ -249,7 +249,7 @@ export default function DashboardPage() {
                             <p className="text-sm font-medium">
                               {project.total_estimated_spend
                                 ? formatCurrency(project.total_estimated_spend)
-                                : "—"}
+                                : "-"}
                             </p>
                             <p className="text-xs text-muted-foreground">Est. Spend</p>
                           </div>

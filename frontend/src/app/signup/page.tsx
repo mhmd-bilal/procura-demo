@@ -24,11 +24,12 @@ export default function SignupPage() {
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { full_name: fullName },
+          emailRedirectTo: `${window.location.origin}/dashboard`
         },
       });
 
@@ -37,8 +38,12 @@ export default function SignupPage() {
         return;
       }
 
-      toast.success("Account created! Check your email for verification.");
-      router.push("/dashboard");
+      if (data?.session) {
+        toast.success("Account created successfully!");
+        router.push("/dashboard");
+      } else {
+        toast.success("Account created! Check your email for verification.");
+      }
     } catch {
       toast.error("An unexpected error occurred");
     } finally {

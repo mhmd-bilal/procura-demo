@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,7 +152,7 @@ export default function NewProjectPage() {
   };
 
   // Step 3: Process
-  const handleProcessAll = async () => {
+  const handleProcessAll = useCallback(async () => {
     setProcessing(true);
     try {
       await quotationsApi.processAll(projectId!);
@@ -162,7 +162,14 @@ export default function NewProjectPage() {
       toast.error(err.message || "Failed to start processing");
       setProcessing(false);
     }
-  };
+  }, [projectId, router]);
+
+  // Automatically start processing when step 3 is reached
+  useEffect(() => {
+    if (step === 3 && projectId) {
+      handleProcessAll();
+    }
+  }, [step, projectId, handleProcessAll]);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -450,7 +457,7 @@ export default function NewProjectPage() {
               ) : (
                 <>
                   <Sparkle className="w-4 h-4" />
-                  Start AI Processing
+                  Start Processing
                 </>
               )}
             </Button>

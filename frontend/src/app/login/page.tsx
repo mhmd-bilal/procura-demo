@@ -74,10 +74,10 @@ export default function LoginPage() {
           </div>
           <h2 className="text-3xl font-bold mb-4 leading-tight">
             Procurement intelligence,<br />
-            <span className="gradient-text">powered by AI.</span>
+            <span className="gradient-text">built for scale.</span>
           </h2>
           <p className="text-muted-foreground max-w-md leading-relaxed">
-            Upload vendor quotations, get instant AI-powered comparisons, and make smarter
+            Upload vendor quotations, get instant structured comparisons, and make smarter
             procurement decisions backed by data.
           </p>
 
@@ -172,11 +172,11 @@ export default function LoginPage() {
 
           <Button
             variant="outline"
-            className="w-full h-10"
+            className="w-full h-10 text-sidebar-foreground/40 cursor-not-allowed bg-transparent opacity-100 hover:bg-transparent cursor-not-allowed hover:text-sidebar-foreground/40 gap-2 border-border/40"
             onClick={handleGoogleLogin}
             type="button"
           >
-            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" opacity="0.5">
               <path
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                 fill="#4285F4"
@@ -196,6 +196,7 @@ export default function LoginPage() {
               <path d="M1 1h22v22H1z" fill="none" />
             </svg>
             Continue with Google
+            <span className="ml-auto text-[10px] uppercase font-bold bg-sidebar-border text-sidebar-foreground/50 px-1.5 py-0.5 rounded">Soon</span>
           </Button>
 
           <p className="text-center text-sm text-muted-foreground mt-6">

@@ -6,7 +6,7 @@ import { motion, useReducedMotion } from "framer-motion"
 import { useRef, useState, useEffect, useId } from "react"
 import { cn } from "@/lib/utils"
 
-// ─── Shared layout group ID — one per Tabs root instance ─────────────────────
+// ─── Shared layout group ID - one per Tabs root instance ─────────────────────
 // We derive it from React's useId so nested Tabs don't interfere.
 
 function Tabs({
@@ -124,7 +124,7 @@ function TabsTrigger({ className, children, ...props }: TabsPrimitive.Tab.Props)
         Framer Motion shared layout pill.
         layoutId must be IDENTICAL across all triggers in the same list
         so Framer knows to animate between them.
-        We pass the same static ID string here — this works because only
+        We pass the same static ID string here - this works because only
         ONE trigger is active at a time, so only one pill exists in the DOM.
       */}
       {isActive && (

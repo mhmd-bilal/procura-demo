@@ -369,7 +369,7 @@ export default function ProjectDetailPage() {
       toast.loading("Regenerating comparison...");
       await comparisonApi.generate(projectId);
       toast.dismiss();
-      toast.loading("Regenerating AI summary...");
+      toast.loading("Regenerating summary...");
       await comparisonApi.generateSummary(projectId);
       toast.dismiss();
       toast.success("Project fully updated!");
@@ -452,7 +452,7 @@ export default function ProjectDetailPage() {
                   exit={{ opacity: 0, scale: 0.85 }}>
                   <Badge className="bg-primary/10 text-primary border-primary/20 gap-1.5 text-[11px] font-semibold animate-pulse">
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    AI Processing
+                    Processing
                   </Badge>
                 </motion.div>
               )}
@@ -519,7 +519,7 @@ export default function ProjectDetailPage() {
           </div>
 
           <Button variant="ghost" size="sm" onClick={handleDeleteProject}
-            className="h-9 px-3 text-xs font-medium rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/8 gap-1.5 border border-border/40">
+            className="h-9 px-3 text-xs font-medium rounded-xl bg-destructive/5 text-destructive/80 hover:text-destructive hover:bg-destructive/8 gap-1.5 border border-border/40">
             <Trash2 className="w-3.5 h-3.5" />
             Delete
           </Button>
@@ -564,7 +564,7 @@ export default function ProjectDetailPage() {
           trend={allVendorNames.length > 0
             ? allVendorNames.slice(0, 2).join(", ") + (allVendorNames.length > 2 ? `…` : "")
             : "None yet"} />
-        <StatCard index={2} label="Avg. Price Spread" value={comparison.length ? `${avgSavings}%` : "—"}
+        <StatCard index={2} label="Avg. Price Spread" value={comparison.length ? `${avgSavings}%` : "-"}
           icon={TrendingDown} colorClass="text-emerald" bgClass="bg-emerald/10" gradient="from-emerald/10"
           trend="Between lowest & highest" />
         <StatCard index={3} label="Anomalies"
@@ -604,7 +604,7 @@ export default function ProjectDetailPage() {
           </TabsList>
 
           {/* ════════════════════════════════════════════════════════════
-              TAB — COMPARISON
+              TAB - COMPARISON
           ════════════════════════════════════════════════════════════ */}
           <TabsContent value="comparison" className="mt-4 space-y-4 outline-none">
 
@@ -624,7 +624,7 @@ export default function ProjectDetailPage() {
                       </span>
                     </div>
                     <div className="space-y-1.5 max-w-xs">
-                      <p className="font-semibold text-sm">Gemini AI is analysing…</p>
+                      <p className="font-semibold text-sm">Analysing documents…</p>
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         Extracting line items, normalising descriptions and running cross-vendor price analysis.
                       </p>
@@ -714,7 +714,7 @@ export default function ProjectDetailPage() {
                                 <span className="line-clamp-1">{row.normalized_item_name}</span>
                               </td>
                               <td className="px-4 py-3 text-center text-muted-foreground">
-                                {prices[0]?.quantity || "—"}
+                                {prices[0]?.quantity || "-"}
                               </td>
 
                               {allVendorNames.map(vn => {
@@ -740,7 +740,7 @@ export default function ProjectDetailPage() {
                                         )}
                                       </div>
                                     ) : (
-                                      <span className="text-muted-foreground/30 font-mono">—</span>
+                                      <span className="text-muted-foreground/30 font-mono">-</span>
                                     )}
                                   </td>
                                 );
@@ -758,7 +758,7 @@ export default function ProjectDetailPage() {
                                     }
                                     {spread}%
                                   </span>
-                                ) : <span className="text-muted-foreground/30">—</span>}
+                                ) : <span className="text-muted-foreground/30">-</span>}
                               </td>
 
                               <td className="px-4 py-3 text-center">
@@ -811,7 +811,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           {/* ════════════════════════════════════════════════════════════
-              TAB — AI SUMMARY
+              TAB - AI SUMMARY
           ════════════════════════════════════════════════════════════ */}
           <TabsContent value="summary" className="mt-4 space-y-4 outline-none">
 
@@ -832,7 +832,7 @@ export default function ProjectDetailPage() {
                       <div className="space-y-1 max-w-xs">
                         <p className="font-semibold text-sm">Ready to generate</p>
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          AI will produce a structured procurement report with vendor rankings, risk flags, and recommendations.
+                          The system will produce a structured procurement report with vendor rankings, risk flags, and recommendations.
                         </p>
                       </div>
                       <Button onClick={handleGenerateSummary} disabled={summaryGenerating} className="gap-2 mt-1">
@@ -873,7 +873,7 @@ export default function ProjectDetailPage() {
                         <p className="text-[11px] font-semibold text-muted-foreground tracking-widest uppercase">Cheapest Vendor
                         </p>
                       </div>
-                      <p className="text-xl font-bold">{summary?.cheapest_vendor?.vendor_name || "—"}</p>
+                      <p className="text-xl font-bold">{summary?.cheapest_vendor?.vendor_name || "-"}</p>
                       {summary?.cheapest_vendor?.savings_pct && (
                         <p className="text-xs text-emerald font-semibold mt-1">
                           {summary.cheapest_vendor.savings_pct}% savings vs average
@@ -891,7 +891,7 @@ export default function ProjectDetailPage() {
                         <p className="text-[11px] font-semibold text-muted-foreground tracking-widest uppercase">Best Delivery
                         </p>
                       </div>
-                      <p className="text-xl font-bold">{summary?.best_delivery_vendor?.vendor_name || "—"}</p>
+                      <p className="text-xl font-bold">{summary?.best_delivery_vendor?.vendor_name || "-"}</p>
                       {summary?.best_delivery_vendor?.avg_delivery_days && (
                         <p className="text-xs text-cyan font-semibold mt-1">
                           {summary.best_delivery_vendor.avg_delivery_days} days average
@@ -975,7 +975,7 @@ export default function ProjectDetailPage() {
                               </div>
 
                               {v.score_breakdown?.length > 0 && (
-                                <div 
+                                <div
                                   style={{ display: 'grid', gridTemplateColumns: `repeat(${v.score_breakdown.length}, 1fr)` }}
                                   className="gap-3 mt-3.5 pt-3.5 border-t border-border/40"
                                 >
@@ -1033,7 +1033,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           {/* ════════════════════════════════════════════════════════════
-              TAB — NEGOTIATE
+              TAB - NEGOTIATE
           ════════════════════════════════════════════════════════════ */}
           <TabsContent value="negotiate" className="mt-4 space-y-4 outline-none">
             <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-4">
@@ -1141,7 +1141,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           {/* ════════════════════════════════════════════════════════════
-              TAB — INTELLIGENCE
+              TAB - INTELLIGENCE
           ════════════════════════════════════════════════════════════ */}
           <TabsContent value="intelligence" className="mt-4 space-y-4 outline-none">
             <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-4">
@@ -1151,7 +1151,7 @@ export default function ProjectDetailPage() {
                   <CardContent className="px-5 py-1">
                     <SectionLabel label="Online Vendor Intelligence" />
                     <p className="text-xs text-muted-foreground mb-5 -mt-1 leading-relaxed">
-                      Run an AI-powered web sweep to surface public reviews, reputation signals, and market red flags.
+                      Run an automated web sweep to surface public reviews, reputation signals, and market red flags.
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-3">
@@ -1342,11 +1342,11 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           {/* ════════════════════════════════════════════════════════════
-              TAB — PDF MANAGEMENT
+              TAB - PDF MANAGEMENT
           ════════════════════════════════════════════════════════════ */}
           <TabsContent value="pdfs" className="mt-4 outline-none">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 pb-4">
+            <Card className="gap-0 pb-0">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 ">
                 <div>
                   <h3 className="font-semibold text-lg">Quotation PDFs</h3>
                   <p className="text-xs text-muted-foreground mt-1">Manage vendor quotations for this project.</p>
