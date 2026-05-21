@@ -4,6 +4,7 @@ import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = IBM_Plex_Sans({
   variable: "--font-sans",
@@ -30,6 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className="antialiased" suppressHydrationWarning>
+        <Analytics />
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
