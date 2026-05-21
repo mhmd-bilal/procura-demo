@@ -27,6 +27,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3001",
         "http://10.40.7.51:3000",
         "http://10.40.7.51:3001",
+        "https://procura-demo.vercel.app",
+        os.getenv("FRONTEND_URL", "https://procura-demo.vercel.app")
     ]
 
     # Supabase
