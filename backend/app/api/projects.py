@@ -3,17 +3,20 @@
 from fastapi import APIRouter, HTTPException, Depends
 from app.core.supabase import get_supabase
 from app.models.schemas import ProjectCreate, ProjectUpdate, ProjectResponse
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
 @router.get("")
-async def list_projects(org_id: str = None):
+async def list_projects(org_id: str = None, current_user = Depends(get_current_user)):
     """List all projects, optionally filtered by organization."""
     supabase = get_supabase()
     query = supabase.table("projects").select(
         "*, vendors(count)"
     ).order("created_at", desc=True)
+
+    query = query.eq("created_by", current_user.id)
 
     if org_id:
         query = query.eq("organization_id", org_id)
@@ -38,10 +41,10 @@ async def list_projects(org_id: str = None):
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: str):
+async def get_project(project_id: str, current_user = Depends(get_current_user)):
     """Get a single project with all related data."""
     supabase = get_supabase()
-    result = supabase.table("projects").select("*").eq("id", project_id).single().execute()
+    result = supabase.table("projects").select("*").eq("id", project_id).eq("created_by", current_user.id).single().execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -62,7 +65,7 @@ async def get_project(project_id: str):
 
 
 @router.post("")
-async def create_project(project: ProjectCreate):
+async def create_project(project: ProjectCreate, current_user = Depends(get_current_user)):
     """Create a new comparison project."""
     supabase = get_supabase()
 
@@ -74,6 +77,7 @@ async def create_project(project: ProjectCreate):
         "currency": project.currency,
         "tags": project.tags,
         "status": "draft",
+        "created_by": current_user.id,
         "organization_id": None
     }
 
@@ -85,7 +89,7 @@ async def create_project(project: ProjectCreate):
 
 
 @router.patch("/{project_id}")
-async def update_project(project_id: str, project: ProjectUpdate):
+async def update_project(project_id: str, project: ProjectUpdate, current_user = Depends(get_current_user)):
     """Update project details."""
     supabase = get_supabase()
     update_data = project.model_dump(exclude_none=True)
@@ -93,7 +97,7 @@ async def update_project(project_id: str, project: ProjectUpdate):
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    result = supabase.table("projects").update(update_data).eq("id", project_id).execute()
+    result = supabase.table("projects").update(update_data).eq("id", project_id).eq("created_by", current_user.id).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -102,8 +106,14 @@ async def update_project(project_id: str, project: ProjectUpdate):
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str):
+async def delete_project(project_id: str, current_user = Depends(get_current_user)):
     """Delete a project and all related data."""
     supabase = get_supabase()
-    supabase.table("projects").delete().eq("id", project_id).execute()
+    
+    # First check if the project exists and belongs to the user
+    check = supabase.table("projects").select("id").eq("id", project_id).eq("created_by", current_user.id).execute()
+    if not check.data:
+        raise HTTPException(status_code=404, detail="Project not found or you don't have permission")
+        
+    supabase.table("projects").delete().eq("id", project_id).eq("created_by", current_user.id).execute()
     return {"message": "Project deleted successfully"}
