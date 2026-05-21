@@ -43,7 +43,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2 mr-12">
             <div className="w-7 h-7 rounded-sm bg-primary flex items-center justify-center">
               <Image
-                src={theme === "dark" ? "/logo-dark.png" : "/logo-light.png"}
+                src={theme === "dark" ? "/dark.png" : "/light.png"}
                 alt="Procura logo"
                 width={20}
                 height={20}

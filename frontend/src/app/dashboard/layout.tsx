@@ -177,7 +177,7 @@ export default function DashboardLayout({
           </button>
           <div className="flex items-center gap-2">
             <Image
-              src={mounted && theme === "dark" ? "/logo-dark.png" : "/logo-light.png"}
+              src={mounted && theme === "dark" ? "/dark.png" : "/light.png"}
               alt="Procura logo"
               width={20}
               height={20}
